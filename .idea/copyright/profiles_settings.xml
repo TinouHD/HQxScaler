@@ -1,0 +1,44 @@
+<component name="CopyrightManager">
+  <settings default="TinouHD">
+    <module2copyright>
+      <element module="All" copyright="TinouHD" />
+    </module2copyright>
+    <LanguageOptions name="Groovy">
+      <option name="fileTypeOverride" value="3" />
+      <option name="filler" value="|" />
+    </LanguageOptions>
+    <LanguageOptions name="HTML">
+      <option name="fileTypeOverride" value="3" />
+      <option name="filler" value="|" />
+    </LanguageOptions>
+    <LanguageOptions name="JAVA">
+      <option name="fileTypeOverride" value="3" />
+      <option name="fileLocation" value="3" />
+      <option name="filler" value="|" />
+    </LanguageOptions>
+    <LanguageOptions name="Kotlin">
+      <option name="fileTypeOverride" value="3" />
+      <option name="filler" value="|" />
+    </LanguageOptions>
+    <LanguageOptions name="Properties">
+      <option name="fileTypeOverride" value="3" />
+      <option name="separateBefore" value="true" />
+      <option name="separateAfter" value="true" />
+      <option name="lenBefore" value="100" />
+      <option name="lenAfter" value="100" />
+      <option name="box" value="true" />
+    </LanguageOptions>
+    <LanguageOptions name="SPI">
+      <option name="fileTypeOverride" value="3" />
+      <option name="separateBefore" value="true" />
+      <option name="separateAfter" value="true" />
+      <option name="lenBefore" value="100" />
+      <option name="lenAfter" value="100" />
+      <option name="box" value="true" />
+    </LanguageOptions>
+    <LanguageOptions name="XML">
+      <option name="fileTypeOverride" value="3" />
+      <option name="filler" value="|" />
+    </LanguageOptions>
+  </settings>
+</component>
