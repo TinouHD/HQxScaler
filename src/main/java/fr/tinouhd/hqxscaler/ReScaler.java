@@ -13,11 +13,18 @@ import java.io.File;
 public class ReScaler
 {
 	private BufferedImage bi;
-	private int scale;
+	private final int scale;
+	private final String name;
 
-	public ReScaler(BufferedImage bi, int scale)
+	public ReScaler(File f, int scale)
 	{
-		this.bi = bi;
+		this.name = f.getName().split("\\.")[0];
+		try
+		{
+			bi = ImageIO.read(f);
+		} catch (java.io.IOException ignored)
+		{
+		}
 		this.scale = scale;
 	}
 
@@ -36,7 +43,7 @@ public class ReScaler
 			return;
 		try
 		{
-			ImageIO.write(dest, "PNG", new File(out, System.currentTimeMillis() + "_x" + scale + ".png"));
+			ImageIO.write(dest, "PNG", new File(out, name + ".png"));
 		} catch (java.io.IOException ignored)
 		{
 		}
@@ -44,6 +51,7 @@ public class ReScaler
 
 	private BufferedImage reScaler()
 	{
+		System.out.print("Start processing for " + name + "@x" + scale + "  ...");
 		if (scale == 1)
 			return bi;
 		else if (scale < 2)
@@ -86,6 +94,7 @@ public class ReScaler
 						break;
 				}
 				// Save our result
+				System.out.println(" Ok !");
 				return biDest;
 			}
 		}

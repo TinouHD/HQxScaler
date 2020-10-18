@@ -10,9 +10,9 @@ public class Main
 		frame.setContentPane(new ReScalerGUI().mainPanel);
 		frame.setTitle("HQx ReScaler");
 		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-		frame.setLocationRelativeTo(null);
 		frame.setResizable(false);
 		frame.pack();
+		frame.setLocationRelativeTo(null);
 		frame.setVisible(true);
 	}
 }

@@ -44,15 +44,18 @@ public class ReScalerGUI
 			if (!f.exists())
 				return;
 
-			BufferedImage bi = null;
-			try
+			if(f.isDirectory())
 			{
-				bi = ImageIO.read(f);
-			} catch (java.io.IOException ignored)
+				for (File img : f.listFiles())
+				{
+					ReScaler rs = new ReScaler(img, scale);
+					rs.saveToFile();
+				}
+			}else
 			{
+				ReScaler rs = new ReScaler(f, scale);
+				rs.saveToFile();
 			}
-			ReScaler rs = new ReScaler(bi, scale);
-			rs.saveToFile();
 
 			JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
 		});
