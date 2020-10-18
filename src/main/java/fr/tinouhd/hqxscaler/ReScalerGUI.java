@@ -44,20 +44,25 @@ public class ReScalerGUI
 			if (!f.exists())
 				return;
 
-			if(f.isDirectory())
-			{
-				for (File img : f.listFiles())
+			Thread t = new Thread(() -> {
+				processButton.setEnabled(false);
+				if(f.isDirectory())
 				{
-					ReScaler rs = new ReScaler(img, scale);
+					for (File img : f.listFiles())
+					{
+						ReScaler rs = new ReScaler(img, scale);
+						rs.saveToFile();
+					}
+				}else
+				{
+					ReScaler rs = new ReScaler(f, scale);
 					rs.saveToFile();
 				}
-			}else
-			{
-				ReScaler rs = new ReScaler(f, scale);
-				rs.saveToFile();
-			}
 
-			JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
+				JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
+				processButton.setEnabled(true);
+			});
+			t.start();
 		});
 	}
 }
