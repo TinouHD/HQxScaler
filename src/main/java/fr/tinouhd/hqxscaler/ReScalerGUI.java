@@ -1,10 +1,8 @@
 package fr.tinouhd.hqxscaler;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.image.BufferedImage;
 import java.io.File;
 
 public class ReScalerGUI
@@ -40,29 +38,33 @@ public class ReScalerGUI
 			if (fileInput.getText().isEmpty() || fileInput.getText() == null || sizeSelector.getSelectedItem() == null || (int) sizeSelector.getSelectedItem() < 2 || (int) sizeSelector.getSelectedItem() > 4)
 				return;
 			File f = new File(fileInput.getText());
-			int scale = (int) sizeSelector.getSelectedItem();
 			if (!f.exists())
 				return;
 
 			Thread t = new Thread(() -> {
 				processButton.setEnabled(false);
-				if(f.isDirectory())
-				{
-					for (File img : f.listFiles())
-					{
-						ReScaler rs = new ReScaler(img, scale);
-						rs.saveToFile();
-					}
-				}else
-				{
-					ReScaler rs = new ReScaler(f, scale);
-					rs.saveToFile();
-				}
+
+				processFile(f);
 
 				JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
 				processButton.setEnabled(true);
 			});
 			t.start();
 		});
+	}
+
+	private void processFile(File f)
+	{
+		int scale = (int) sizeSelector.getSelectedItem();
+		if(f.isDirectory())
+		{
+			for (File listFile : f.listFiles()) {
+				processFile(listFile);
+			}
+		}else
+		{
+			ReScaler rs = new ReScaler(f, scale);
+			rs.saveToFile();
+		}
 	}
 }
