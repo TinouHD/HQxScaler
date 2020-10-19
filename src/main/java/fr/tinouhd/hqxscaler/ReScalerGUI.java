@@ -23,8 +23,8 @@ public class ReScalerGUI
 
 		selectFileButton.addActionListener(e -> {
 			JFileChooser fileChooser = new JFileChooser();
-			FileFilter imagesFilter = new FileNameExtensionFilter("Images", "bmp", "gif", "jpg", "jpeg", "png");
-			fileChooser.setFileFilter(imagesFilter);
+			fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("Images", "bmp", "gif", "jpg", "jpeg", "png"));
+			fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
 
 			int choice = fileChooser.showOpenDialog(null);
 
