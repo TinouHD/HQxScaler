@@ -30,6 +30,11 @@ public final class RgbYuv
 	private static final int rgbMask = 0x00FFFFFF;
 	private static int[] RGBtoYUV = new int[0x1000000];
 
+	private RgbYuv()
+	{
+		throw new UnsupportedOperationException();
+	}
+
 	/**
 	 * Returns the 24bit YUV equivalent of the provided 24bit RGB color.<b>Any alpha component is dropped</b>
 	 *

@@ -27,6 +27,11 @@ package fr.tinouhd.hqxscaler.hqx;
 
 public class Hqx_2x extends Hqx
 {
+	private Hqx_2x()
+	{
+		throw new UnsupportedOperationException();
+	}
+
 	/**
 	 * This is the extended Java port of the hq2x algorithm.
 	 * <b>The destination image must be exactly twice as large in both dimensions as the source image</b>

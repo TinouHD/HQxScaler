@@ -1,13 +1,11 @@
 package fr.tinouhd.hqxscaler;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.image.BufferedImage;
 import java.io.File;
 
-public class ReScalerGUI
+final class ReScalerGUI
 {
 	public JPanel mainPanel;
 	private JButton processButton;
@@ -16,6 +14,7 @@ public class ReScalerGUI
 	private JLabel fileInputLabel;
 	private JPanel buttonPanel;
 	private JComboBox<Integer> sizeSelector;
+	private JProgressBar progressBar;
 
 	public ReScalerGUI()
 	{
@@ -26,7 +25,9 @@ public class ReScalerGUI
 		selectFileButton.addActionListener(e -> {
 			JFileChooser fileChooser = new JFileChooser();
 			FileFilter imagesFilter = new FileNameExtensionFilter("Images", "bmp", "gif", "jpg", "jpeg", "png");
-			fileChooser.setFileFilter(imagesFilter);
+			FileFilter videoFilter = new FileNameExtensionFilter("Video", "mp4");
+			fileChooser.addChoosableFileFilter(imagesFilter);
+			fileChooser.addChoosableFileFilter(videoFilter);
 
 			int choice = fileChooser.showOpenDialog(null);
 
@@ -46,21 +47,31 @@ public class ReScalerGUI
 
 			Thread t = new Thread(() -> {
 				processButton.setEnabled(false);
+				ReScaler rs = new ReScaler(scale);
+				GuiReScaler grs = new GuiReScaler(scale, progressBar);
+				progressBar.setMinimum(0);
 				if(f.isDirectory())
 				{
+					progressBar.setMaximum(f.listFiles().length);
 					for (File img : f.listFiles())
 					{
-						ReScaler rs = new ReScaler(img, scale);
-						rs.saveToFile();
+						if(img.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$"))
+						{
+							rs.processFileAndSave(img);
+							progressBar.setValue(progressBar.getValue() + 1);
+						}
 					}
 				}else
 				{
-					ReScaler rs = new ReScaler(f, scale);
-					rs.saveToFile();
+					if(f.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$"))
+					{
+						grs.processFileAndSave(f);
+					}
 				}
-
+				rs.close();
 				JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
 				processButton.setEnabled(true);
+				progressBar.setValue(0);
 			});
 			t.start();
 		});

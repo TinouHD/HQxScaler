@@ -27,6 +27,11 @@ package fr.tinouhd.hqxscaler.hqx;
 
 public class Hqx_3x extends Hqx
 {
+	private Hqx_3x()
+	{
+		throw new UnsupportedOperationException();
+	}
+
 	/**
 	 * This is the extended Java port of the hq3x algorithm.
 	 * <b>The destination image must be exactly 3 times as large in both dimensions as the source image</b>

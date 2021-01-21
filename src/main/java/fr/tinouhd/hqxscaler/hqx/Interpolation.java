@@ -34,6 +34,11 @@ final class Interpolation
 	private static final int Mask2 = 0x0000FF00;
 	private static final int Mask13 = 0x00FF00FF;
 
+	private Interpolation()
+	{
+		throw new UnsupportedOperationException();
+	}
+
 	// return statements:
 	//	 1. line: green
 	//	 2. line: red and blue
