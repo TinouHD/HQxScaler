@@ -1,18 +1,12 @@
 package fr.tinouhd.hqxscaler;
 
+import com.zakgof.velvetvideo.*;
+import com.zakgof.velvetvideo.impl.VelvetVideoLib;
 import javafx.util.Pair;
-import org.jcodec.api.awt.AWTFrameGrab;
-import org.jcodec.api.awt.AWTSequenceEncoder;
-import org.jcodec.common.DemuxerTrack;
-import org.jcodec.common.io.FileChannelWrapper;
-import org.jcodec.common.io.NIOUtils;
-import org.jcodec.containers.mp4.demuxer.MP4Demuxer;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.*;
@@ -26,57 +20,51 @@ final class GuiReScaler extends ReScaler
 		this.progressBar = progress;
 	}
 
-	@Override public void processFileAndSave(File f)
+	@Override public void processVideo(File video) throws InterruptedException, ExecutionException
 	{
-		if(f.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png)$"))
-		{
-			super.processFileAndSave(f);
-		}else if(f.getName().matches("^.*\\.mp4$"))
-		{
-			try
-			{
-				FileChannelWrapper ch = NIOUtils.readableChannel(f);
-				MP4Demuxer demuxer = MP4Demuxer.createMP4Demuxer(ch);
-				DemuxerTrack video = demuxer.getVideoTrack();
-				System.out.println(video.getMeta().getTotalFrames());
-				progressBar.setMaximum(video.getMeta().getTotalFrames());
-				File out = new File("out", f.getName().split("\\.")[0] + ".mp4");
-				AWTSequenceEncoder encoder = AWTSequenceEncoder.createSequenceEncoder(out, (int)(video.getMeta().getTotalFrames() / video.getMeta().getTotalDuration()));
-				ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
-				Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-				for (int i = 0; i < video.getMeta().getTotalFrames(); i++)
-				{
-					int finalI = i;
-					collectorExecutor.submit(() -> futures.add(super.executor.submit(() -> processImage(f.getName().split("\\.")[0] + "#" + finalI, AWTFrameGrab.getFrame(f, finalI)))));
-				}
-				int i = 0;
-				while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
-				{
-					if(futures.peek() != null){
-						if(futures.peek().isDone()){
-							System.out.println("Encoding " + futures.peek().get().getKey() + " |\t" + i);
-							i++;
-							encoder.encodeImage(futures.poll().get().getValue());
-							progressBar.setValue(progressBar.getValue() + 1);
-						}else
-						{
-							Thread.sleep(1);
-						}
-					}else
-					{
-						Thread.sleep(1);
-					}
-				}
-				collectorExecutor.shutdown();
-				collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
-				progressBar.setValue(progressBar.getMaximum());
-				encoder.finish();
+		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
-			} catch (IOException | InterruptedException | ExecutionException e)
-			{}
-		}else
+		File out = new File("out", video.getName().split("\\.")[0] + ".mp4");
+		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).build(out);
+		IDemuxer demuxer = lib.demuxer(video);
+
+		IVideoEncoderStream encoder = muxer.videoEncoder(0);
+		IVideoDecoderStream videoStream = demuxer.videoStream(0);
+
+		IAudioEncoderStream audioEncoder = muxer.audioEncoder(0);
+		IAudioDecoderStream audioDecoder = demuxer.audioStream(0);
+
+		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
+		progressBar.setMaximum((int) videoStream.properties().frames());
+		IVideoFrame videoFrame;
+		for (int i = 0; (videoFrame = videoStream.nextFrame()) != null; i++)
 		{
-			throw new UnsupportedOperationException();
+			int finalI = i;
+			BufferedImage image = videoFrame.image();
+			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
 		}
+		demuxer.close();
+		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
+		{
+			if(futures.peek() != null){
+				if(futures.peek().isDone()){
+					System.out.println("Encoding " + futures.peek().get().getKey());
+					encoder.encode(futures.poll().get().getValue());
+					audioEncoder.encode(audioDecoder.nextFrame().samples());
+					progressBar.setValue(progressBar.getValue() + 1);
+				}else
+				{
+					Thread.sleep(1);
+				}
+			}else
+			{
+				Thread.sleep(1);
+			}
+		}
+		collectorExecutor.shutdown();
+		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+		muxer.close();
+		progressBar.setValue(progressBar.getMaximum());
 	}
 }

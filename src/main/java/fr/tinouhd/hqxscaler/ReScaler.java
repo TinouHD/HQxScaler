@@ -1,17 +1,12 @@
 package fr.tinouhd.hqxscaler;
 
+import com.zakgof.velvetvideo.*;
+import com.zakgof.velvetvideo.impl.VelvetVideoLib;
 import fr.tinouhd.hqxscaler.hqx.Hqx_2x;
 import fr.tinouhd.hqxscaler.hqx.Hqx_3x;
 import fr.tinouhd.hqxscaler.hqx.Hqx_4x;
 import fr.tinouhd.hqxscaler.hqx.RgbYuv;
 import javafx.util.Pair;
-import org.jcodec.api.JCodecException;
-import org.jcodec.api.awt.AWTFrameGrab;
-import org.jcodec.api.awt.AWTSequenceEncoder;
-import org.jcodec.common.DemuxerTrack;
-import org.jcodec.common.io.FileChannelWrapper;
-import org.jcodec.common.io.NIOUtils;
-import org.jcodec.containers.mp4.demuxer.MP4Demuxer;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -48,40 +43,8 @@ public class ReScaler implements AutoCloseable
 		{
 			try
 			{
-				FileChannelWrapper ch = NIOUtils.readableChannel(f);
-				MP4Demuxer demuxer = MP4Demuxer.createMP4Demuxer(ch);
-				DemuxerTrack video = demuxer.getVideoTrack();
-				System.out.println(video.getMeta().getTotalFrames());
-				//Queue<Pair<String, BufferedImage>> biq = new ArrayDeque<>();
-				File out = new File("out", f.getName().split("\\.")[0] + ".mp4");
-				AWTSequenceEncoder encoder = AWTSequenceEncoder.createSequenceEncoder(out, (int)(video.getMeta().getTotalFrames() / video.getMeta().getTotalDuration()));
-				ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
-				Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-				for (int i = 0; i < video.getMeta().getTotalFrames(); i++)
-				{
-					int finalI = i;
-					collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(f.getName().split("\\.")[0] + "#" + finalI, AWTFrameGrab.getFrame(f, finalI)))));
-				}
-				while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
-				{
-					if(futures.peek() != null){
-						if(futures.peek().isDone()){
-							System.out.println("Encoding " + futures.peek().get().getKey());
-							encoder.encodeImage(futures.poll().get().getValue());
-						}else
-						{
-							Thread.sleep(1);
-						}
-					}else
-					{
-						Thread.sleep(1);
-					}
-				}
-				collectorExecutor.shutdown();
-				collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
-				encoder.finish();
-
-			} catch (IOException | InterruptedException | ExecutionException e)
+				processVideo(f);
+			} catch (InterruptedException | ExecutionException e)
 			{}
 		}else
 		{
@@ -127,36 +90,50 @@ public class ReScaler implements AutoCloseable
 		return new Pair<>(name, biDest);
 	}
 
-	/*private Queue<Future<BufferedImage>> processVideo(Queue<Pair<String, BufferedImage>> video, Thread t)
+	public void processVideo(File video) throws InterruptedException, ExecutionException
 	{
-		Queue<Future<BufferedImage>> futures = new ArrayDeque<>();
-		Thread mainProcessor = new Thread(() -> {
-			while (!video.isEmpty() || !t.isInterrupted())
-			{
-				if (video.peek() != null)
-				{
-					Pair<String, BufferedImage> pair = video.poll();
-					System.out.println("Processing : " + pair.getKey() + "\t|\t" + video.size());
-					futures.add(executor.submit(() -> processImage(pair.getKey(), pair.getValue())));
-					if(futures.peek() == null)
-					{
-						//System.out.println("=====================");
-					}
-				} else
-				{
-					try
-					{
-						wait();
-					} catch (InterruptedException e)
-					{}
-				}
-			}
-			System.out.println("Finished !");
-		}, "mainProcessorThread");
-		mainProcessor.start();
+		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
-		return futures;
-	}*/
+		File out = new File("out", video.getName().split("\\.")[0] + ".mp4");
+		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).build(out);
+		IDemuxer demuxer = lib.demuxer(video);
+
+		IVideoEncoderStream encoder = muxer.videoEncoder(0);
+		IVideoDecoderStream videoStream = demuxer.videoStream(0);
+
+		IAudioEncoderStream audioEncoder = muxer.audioEncoder(0);
+		IAudioDecoderStream audioDecoder = demuxer.audioStream(0);
+
+		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
+		IVideoFrame videoFrame;
+		for (int i = 0; (videoFrame = videoStream.nextFrame()) != null; i++)
+		{
+			int finalI = i;
+			BufferedImage image = videoFrame.image();
+			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+		}
+		demuxer.close();
+		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
+		{
+			if(futures.peek() != null){
+				if(futures.peek().isDone()){
+					System.out.println("Encoding " + futures.peek().get().getKey());
+					encoder.encode(futures.poll().get().getValue());
+					audioEncoder.encode(audioDecoder.nextFrame().samples());
+				}else
+				{
+					Thread.sleep(1);
+				}
+			}else
+			{
+				Thread.sleep(1);
+			}
+		}
+		collectorExecutor.shutdown();
+		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+		muxer.close();
+	}
 
 	@Override public void close()
 	{
