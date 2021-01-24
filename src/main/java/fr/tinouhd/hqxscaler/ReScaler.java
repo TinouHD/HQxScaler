@@ -1,5 +1,6 @@
 package fr.tinouhd.hqxscaler;
 
+import com.sun.imageio.plugins.gif.GIFImageReader;
 import com.zakgof.velvetvideo.*;
 import com.zakgof.velvetvideo.impl.VelvetVideoLib;
 import fr.tinouhd.hqxscaler.hqx.Hqx_2x;
@@ -9,6 +10,12 @@ import fr.tinouhd.hqxscaler.hqx.RgbYuv;
 import javafx.util.Pair;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.metadata.IIOMetadataNode;
+import javax.imageio.stream.FileImageOutputStream;
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.ImageOutputStream;
+import javax.swing.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.File;
@@ -30,7 +37,7 @@ public class ReScaler implements AutoCloseable
 
 	public void processFileAndSave(File f)
 	{
-		if(f.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png)$"))
+		if(f.getName().matches("^.*\\.(bmp|jpg|jpeg|png)$"))
 		{
 			try
 			{
@@ -46,6 +53,14 @@ public class ReScaler implements AutoCloseable
 				processVideo(f);
 			} catch (InterruptedException | ExecutionException e)
 			{}
+		}else if(f.getName().matches("^.*\\.gif$"))
+		{
+			try
+			{
+				processAnimatedGif(f);
+			} catch (IOException | InterruptedException | ExecutionException e)
+			{}
+
 		}else
 		{
 			throw new UnsupportedOperationException();
@@ -101,8 +116,8 @@ public class ReScaler implements AutoCloseable
 		IVideoEncoderStream encoder = muxer.videoEncoder(0);
 		IVideoDecoderStream videoStream = demuxer.videoStream(0);
 
-		IAudioEncoderStream audioEncoder = muxer.audioEncoder(0);
-		IAudioDecoderStream audioDecoder = demuxer.audioStream(0);
+		/*IAudioEncoderStream audioEncoder = muxer.audioEncoder(0);
+		IAudioDecoderStream audioDecoder = demuxer.audioStream(0);*/
 
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
@@ -120,7 +135,7 @@ public class ReScaler implements AutoCloseable
 				if(futures.peek().isDone()){
 					System.out.println("Encoding " + futures.peek().get().getKey());
 					encoder.encode(futures.poll().get().getValue());
-					audioEncoder.encode(audioDecoder.nextFrame().samples());
+					//audioEncoder.encode(audioDecoder.nextFrame().samples());
 				}else
 				{
 					Thread.sleep(1);
@@ -133,6 +148,44 @@ public class ReScaler implements AutoCloseable
 		collectorExecutor.shutdown();
 		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		muxer.close();
+	}
+
+	public void processAnimatedGif(File gif) throws IOException, ExecutionException, InterruptedException
+	{
+		ImageReader reader = ImageIO.getImageReadersByFormatName("gif").next();
+		ImageInputStream in = ImageIO.createImageInputStream(gif);
+		reader.setInput(in);
+
+		ImageOutputStream out = new FileImageOutputStream(new File("out/", gif.getName()));
+		IIOMetadataNode gceNode = GifSequenceWriter.getNode((IIOMetadataNode) reader.getImageMetadata(0).getAsTree(reader.getImageMetadata(0).getNativeMetadataFormatName()), "GraphicControlExtension");
+		GifSequenceWriter writer = new GifSequenceWriter(out, BufferedImage.TYPE_INT_ARGB, Integer.parseInt(gceNode.getAttribute("delayTime")), true);
+		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
+		for (int i = 0, count = reader.getNumImages(true); i < count; i++)
+		{
+			BufferedImage image = reader.read(i);
+			int finalI = i;
+			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(gif.getName().split("\\.")[0] + "#" + finalI, image))));
+		}
+		in.close();
+		while (!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
+		{
+			if(futures.peek() != null)
+			{
+				if(futures.peek().isDone())
+				{
+					System.out.println("Encoding " + futures.peek().get().getKey());
+					writer.writeToSequence(futures.poll().get().getValue());
+				}else
+				{
+					Thread.sleep(1);
+				}
+			}else
+			{
+				Thread.sleep(1);
+			}
+		}
+		writer.close();
 	}
 
 	@Override public void close()

@@ -52,14 +52,11 @@ final class ReScalerGUI
 				progressBar.setMinimum(0);
 				if (f.isDirectory())
 				{
-					progressBar.setMaximum(f.listFiles().length);
-					for (File img : f.listFiles())
+					progressBar.setMaximum(f.listFiles(file -> file.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$")).length);
+					for (File img : f.listFiles(file -> file.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$")))
 					{
-						if (img.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$"))
-						{
-							grs.processFileAndSave(img);
-							progressBar.setValue(progressBar.getValue() + 1);
-						}
+						grs.processFileAndSave(img);
+						progressBar.setValue(progressBar.getValue() + 1);
 					}
 				} else
 				{
