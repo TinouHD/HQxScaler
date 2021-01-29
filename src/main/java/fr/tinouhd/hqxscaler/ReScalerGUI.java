@@ -29,6 +29,20 @@ final class ReScalerGUI
 			FileFilter videoFilter = new FileNameExtensionFilter("Video", "mp4");
 			fileChooser.addChoosableFileFilter(imagesFilter);
 			fileChooser.addChoosableFileFilter(videoFilter);
+			if(!fileInput.getText().isEmpty())
+			{
+				File current = new File(fileInput.getText());
+				if(current.exists())
+				{
+					if(current.isDirectory())
+					{
+						fileChooser.setCurrentDirectory(current);
+					}else
+					{
+						fileChooser.setCurrentDirectory(current.getParentFile());
+					}
+				}
+			}
 
 			int choice = fileChooser.showOpenDialog(null);
 
