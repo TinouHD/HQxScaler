@@ -28,12 +28,19 @@ public class ReScaler implements AutoCloseable
 	private File processRoot;
 	protected final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(5);
 
+	/**
+	 * @param scale {@code 2-4} the scale factor for this ReScaler.
+	 * @throws IllegalArgumentException When {@code scale} isn't between 2 and 4.
+	 */
 	public ReScaler(int scale)
 	{
 		if(scale > 4 || scale < 1) throw new IllegalArgumentException();
 		this.scale = scale;
 	}
 
+	/**
+	 * @param f A File, the file to process with this ReScaler.
+	 */
 	public void processFileAndSave(File f)
 	{
 		if(f.isDirectory())
@@ -97,6 +104,11 @@ public class ReScaler implements AutoCloseable
 		}
 	}
 
+	/**
+	 * @param name the name of the image to process (useful for animation processing).
+	 * @param bi the image to process.
+	 * @return a pair with the name of the image and the processed image.
+	 */
 	public Pair<String, BufferedImage> processImage(String name, BufferedImage bi)
 	{
 		// Convert image to ARGB if on another format
@@ -134,6 +146,12 @@ public class ReScaler implements AutoCloseable
 		return new Pair<>(name, biDest);
 	}
 
+	/**
+	 * @param video the video file to process.
+	 * @param out the output file.
+	 * @throws InterruptedException if any thread has interrupted the current thread.
+	 * @throws ExecutionException when a future computation threw an exception.
+	 */
 	public void processVideo(File video, File out) throws InterruptedException, ExecutionException
 	{
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
@@ -178,6 +196,13 @@ public class ReScaler implements AutoCloseable
 		muxer.close();
 	}
 
+	/**
+	 * @param gif the gif file to process.
+	 * @param out the output file.
+	 * @throws IOException if an I/O error occurs.
+	 * @throws InterruptedException if any thread has interrupted the current thread.
+	 * @throws ExecutionException when a future computation threw an exception.
+	 */
 	public void processAnimatedGif(File gif, File out) throws IOException, ExecutionException, InterruptedException
 	{
 		ImageReader reader = ImageIO.getImageReadersByFormatName("gif").next();
