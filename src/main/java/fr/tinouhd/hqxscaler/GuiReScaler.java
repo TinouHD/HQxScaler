@@ -15,26 +15,25 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
 final class GuiReScaler extends ReScaler
 {
-	private JProgressBar progressBar;
-	public GuiReScaler(int scale, JProgressBar progress)
+	private JProgressBar progressBarFiles;
+	private JProgressBar progressBarAnimation;
+	public GuiReScaler(int scale, JProgressBar progress, JProgressBar animation)
 	{
 		super(scale);
-		this.progressBar = progress;
+		this.progressBarFiles = progress;
+		this.progressBarAnimation = animation;
 	}
 
 	@Override
-	public void processVideo(File video) throws InterruptedException, ExecutionException
+	public void processVideo(File video, File out) throws InterruptedException, ExecutionException
 	{
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
-		File out = new File("out", video.getName().split("\\.")[0] + ".mp4");
 		IDemuxer demuxer = lib.demuxer(video);
 
 		IMuxerBuilder builder = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000));
@@ -53,7 +52,8 @@ final class GuiReScaler extends ReScaler
 
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-		progressBar.setMaximum((int) videoStream.properties().frames());
+		progressBarAnimation.setMaximum((int) videoStream.properties().frames());
+		progressBarAnimation.setValue(0);
 		IVideoFrame videoFrame;
 		for (int i = 0; (videoFrame = videoStream.nextFrame()) != null; i++)
 		{
@@ -69,7 +69,7 @@ final class GuiReScaler extends ReScaler
 					System.out.println("Encoding " + futures.peek().get().getKey());
 					encoder.encode(futures.poll().get().getValue());
 					//WIP: audioEncoders.forEach(ae -> ae.encode(audioDecoders.get(audioEncoders.indexOf(ae)).nextFrame().samples()));
-					progressBar.setValue(progressBar.getValue() + 1);
+					progressBarAnimation.setValue(progressBarAnimation.getValue() + 1);
 				}else
 				{
 					Thread.sleep(1);
@@ -82,23 +82,23 @@ final class GuiReScaler extends ReScaler
 		collectorExecutor.shutdown();
 		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		muxer.close();
-		progressBar.setValue(progressBar.getMaximum());
+		progressBarAnimation.setValue(progressBarAnimation.getMaximum());
 	}
 
 	@Override
-	public void processAnimatedGif(File gif) throws IOException, ExecutionException, InterruptedException
+	public void processAnimatedGif(File gif, File out) throws IOException, ExecutionException, InterruptedException
 	{
 		ImageReader reader = ImageIO.getImageReadersByFormatName("gif").next();
 		ImageInputStream in = ImageIO.createImageInputStream(gif);
 		reader.setInput(in);
 
-		ImageOutputStream out = new FileImageOutputStream(new File("out/", gif.getName()));
+		ImageOutputStream outStream = new FileImageOutputStream(out);
 		IIOMetadataNode gceNode = GifSequenceWriter.getNode((IIOMetadataNode) reader.getImageMetadata(0).getAsTree(reader.getImageMetadata(0).getNativeMetadataFormatName()), "GraphicControlExtension");
-		System.out.println(Integer.parseInt(gceNode.getAttribute("delayTime")));
-		GifSequenceWriter writer = new GifSequenceWriter(out, BufferedImage.TYPE_INT_ARGB, Integer.parseInt(gceNode.getAttribute("delayTime")), true);
+		GifSequenceWriter writer = new GifSequenceWriter(outStream, BufferedImage.TYPE_INT_ARGB, Integer.parseInt(gceNode.getAttribute("delayTime")), true);
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-		progressBar.setMaximum(reader.getNumImages(true));
+		progressBarAnimation.setMaximum(reader.getNumImages(true));
+		progressBarAnimation.setValue(0);
 		for (int i = 0, count = reader.getNumImages(true); i < count; i++)
 		{
 			BufferedImage image = reader.read(i);
@@ -114,7 +114,7 @@ final class GuiReScaler extends ReScaler
 				{
 					System.out.println("Encoding " + futures.peek().get().getKey());
 					writer.writeToSequence(futures.poll().get().getValue());
-					progressBar.setValue(progressBar.getValue() + 1);
+					progressBarAnimation.setValue(progressBarAnimation.getValue() + 1);
 				}else
 				{
 					Thread.sleep(1);
@@ -127,7 +127,50 @@ final class GuiReScaler extends ReScaler
 		collectorExecutor.shutdown();
 		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		writer.close();
-		out.close();
-		progressBar.setValue(progressBar.getMaximum());
+		outStream.close();
+		progressBarAnimation.setValue(progressBarAnimation.getMaximum());
+	}
+
+	@Override protected void process(File f) throws UnsupportedOperationException
+	{
+		try
+		{
+			super.process(f);
+		}catch (UnsupportedOperationException e)
+		{
+			System.err.println("Error file \"" + f.getName() + "\" not supported !");
+		}finally
+		{
+			if(!f.isDirectory())
+			{
+				progressBarFiles.setValue(progressBarFiles.getValue() + 1);
+			}
+		}
+	}
+
+	@Override public void processFileAndSave(File f)
+	{
+		if (f.isDirectory())
+		{
+			progressBarFiles.setMaximum(countFilesInDirectory(f));
+		}else
+		{
+			progressBarFiles.setMaximum(1);
+		}
+
+		super.processFileAndSave(f);
+	}
+
+	private static int countFilesInDirectory(File directory) {
+		int count = 0;
+		for (File file : directory.listFiles()) {
+			if (file.isFile()) {
+				count++;
+			}
+			if (file.isDirectory()) {
+				count += countFilesInDirectory(file);
+			}
+		}
+		return count;
 	}
 }

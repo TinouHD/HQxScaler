@@ -1,6 +1,5 @@
 package fr.tinouhd.hqxscaler;
 
-import com.sun.imageio.plugins.gif.GIFImageReader;
 import com.zakgof.velvetvideo.*;
 import com.zakgof.velvetvideo.impl.VelvetVideoLib;
 import fr.tinouhd.hqxscaler.hqx.Hqx_2x;
@@ -15,7 +14,6 @@ import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.FileImageOutputStream;
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.ImageOutputStream;
-import javax.swing.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.File;
@@ -27,6 +25,7 @@ import java.util.concurrent.*;
 public class ReScaler implements AutoCloseable
 {
 	private final int scale;
+	private File processRoot;
 	protected final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(5);
 
 	public ReScaler(int scale)
@@ -37,11 +36,20 @@ public class ReScaler implements AutoCloseable
 
 	public void processFileAndSave(File f)
 	{
+		if(f.isDirectory())
+		{
+			processRoot = f;
+		}
+		process(f);
+	}
+
+	protected void process(File f) throws UnsupportedOperationException
+	{
 		if(f.getName().matches("^.*\\.(bmp|jpg|jpeg|png)$"))
 		{
 			try
 			{
-				File out = new File("out", f.getName().split("\\.")[0] + ".png");
+				File out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".png");
 				out.mkdirs();
 				ImageIO.write(executor.submit(() -> processImage(f.getName().split("\\.")[0], ImageIO.read(f))).get().getValue(), "PNG", out);
 			} catch (IOException | InterruptedException | ExecutionException ignored)
@@ -50,22 +58,43 @@ public class ReScaler implements AutoCloseable
 		{
 			try
 			{
-				processVideo(f);
+				File out;
+				if(processRoot != null)
+				{
+					out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".mp4");
+				}else
+				{
+					out = new File("out/", f.getName());
+				}				processVideo(f, out);
 			} catch (InterruptedException | ExecutionException e)
 			{}
 		}else if(f.getName().matches("^.*\\.gif$"))
 		{
 			try
 			{
-				processAnimatedGif(f);
+				File out;
+				if(processRoot != null)
+				{
+					System.out.println(f.getParentFile().getAbsolutePath() + "\n" + processRoot.getAbsolutePath());
+					out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".gif");
+				}else
+				{
+					out = new File("out/", f.getName());
+				}
+				processAnimatedGif(f, out);
 			} catch (IOException | InterruptedException | ExecutionException e)
 			{}
 
+		}else if(f.isDirectory())
+		{
+			for(File files : f.listFiles())
+			{
+				process(files);
+			}
 		}else
 		{
 			throw new UnsupportedOperationException();
 		}
-
 	}
 
 	public Pair<String, BufferedImage> processImage(String name, BufferedImage bi)
@@ -105,11 +134,10 @@ public class ReScaler implements AutoCloseable
 		return new Pair<>(name, biDest);
 	}
 
-	public void processVideo(File video) throws InterruptedException, ExecutionException
+	public void processVideo(File video, File out) throws InterruptedException, ExecutionException
 	{
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
-		File out = new File("out", video.getName().split("\\.")[0] + ".mp4");
 		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).build(out);
 		IDemuxer demuxer = lib.demuxer(video);
 
@@ -150,15 +178,15 @@ public class ReScaler implements AutoCloseable
 		muxer.close();
 	}
 
-	public void processAnimatedGif(File gif) throws IOException, ExecutionException, InterruptedException
+	public void processAnimatedGif(File gif, File out) throws IOException, ExecutionException, InterruptedException
 	{
 		ImageReader reader = ImageIO.getImageReadersByFormatName("gif").next();
 		ImageInputStream in = ImageIO.createImageInputStream(gif);
 		reader.setInput(in);
 
-		ImageOutputStream out = new FileImageOutputStream(new File("out/", gif.getName()));
+		ImageOutputStream outStream = new FileImageOutputStream(out);
 		IIOMetadataNode gceNode = GifSequenceWriter.getNode((IIOMetadataNode) reader.getImageMetadata(0).getAsTree(reader.getImageMetadata(0).getNativeMetadataFormatName()), "GraphicControlExtension");
-		GifSequenceWriter writer = new GifSequenceWriter(out, BufferedImage.TYPE_INT_ARGB, Integer.parseInt(gceNode.getAttribute("delayTime")), true);
+		GifSequenceWriter writer = new GifSequenceWriter(outStream, BufferedImage.TYPE_INT_ARGB, Integer.parseInt(gceNode.getAttribute("delayTime")), true);
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
 		for (int i = 0, count = reader.getNumImages(true); i < count; i++)
@@ -185,7 +213,10 @@ public class ReScaler implements AutoCloseable
 				Thread.sleep(1);
 			}
 		}
+		collectorExecutor.shutdown();
+		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		writer.close();
+		outStream.close();
 	}
 
 	@Override public void close()

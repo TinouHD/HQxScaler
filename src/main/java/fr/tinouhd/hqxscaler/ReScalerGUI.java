@@ -15,7 +15,8 @@ final class ReScalerGUI
 	private JLabel fileInputLabel;
 	private JPanel buttonPanel;
 	private JComboBox<Integer> sizeSelector;
-	private JProgressBar progressBar;
+	private JProgressBar progressBarFiles;
+	private JProgressBar progressBarAnimation;
 
 	public ReScalerGUI()
 	{
@@ -29,15 +30,16 @@ final class ReScalerGUI
 			FileFilter videoFilter = new FileNameExtensionFilter("Video", "mp4");
 			fileChooser.addChoosableFileFilter(imagesFilter);
 			fileChooser.addChoosableFileFilter(videoFilter);
-			if(!fileInput.getText().isEmpty())
+			fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+			if (!fileInput.getText().isEmpty())
 			{
 				File current = new File(fileInput.getText());
-				if(current.exists())
+				if (current.exists())
 				{
-					if(current.isDirectory())
+					if (current.isDirectory())
 					{
 						fileChooser.setCurrentDirectory(current);
-					}else
+					} else
 					{
 						fileChooser.setCurrentDirectory(current.getParentFile());
 					}
@@ -62,15 +64,17 @@ final class ReScalerGUI
 
 			Thread t = new Thread(() -> {
 				processButton.setEnabled(false);
-				GuiReScaler grs = new GuiReScaler(scale, progressBar);
-				progressBar.setMinimum(0);
-				if (f.isDirectory())
+				GuiReScaler grs = new GuiReScaler(scale, progressBarFiles, progressBarAnimation);
+				progressBarFiles.setMinimum(0);
+				progressBarAnimation.setMaximum(0);
+				grs.processFileAndSave(f);
+				/*if (f.isDirectory())
 				{
-					progressBar.setMaximum(f.listFiles(file -> file.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$")).length);
+					progressBarFiles.setMaximum(f.listFiles(file -> file.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$")).length);
 					for (File img : f.listFiles(file -> file.getName().matches("^.*\\.(bmp|gif|jpg|jpeg|png|mp4)$")))
 					{
 						grs.processFileAndSave(img);
-						progressBar.setValue(progressBar.getValue() + 1);
+						progressBarFiles.setValue(progressBarFiles.getValue() + 1);
 					}
 				} else
 				{
@@ -78,11 +82,12 @@ final class ReScalerGUI
 					{
 						grs.processFileAndSave(f);
 					}
-				}
+				}*/
 				grs.close();
 				JOptionPane.showMessageDialog(null, "All is done !", "HQx ReScaler", JOptionPane.INFORMATION_MESSAGE);
 				processButton.setEnabled(true);
-				progressBar.setValue(0);
+				progressBarFiles.setValue(0);
+				progressBarAnimation.setValue(0);
 			});
 			t.start();
 		});
@@ -105,10 +110,10 @@ final class ReScalerGUI
 	private void $$$setupUI$$$()
 	{
 		mainPanel = new JPanel();
-		mainPanel.setLayout(new com.intellij.uiDesigner.core.GridLayoutManager(4, 1, new Insets(5, 5, 5, 5), -1, -1));
+		mainPanel.setLayout(new com.intellij.uiDesigner.core.GridLayoutManager(5, 1, new Insets(5, 5, 5, 5), -1, -1));
 		buttonPanel = new JPanel();
 		buttonPanel.setLayout(new com.intellij.uiDesigner.core.GridLayoutManager(1, 3, new Insets(0, 0, 0, 0), -1, -1));
-		mainPanel.add(buttonPanel, new com.intellij.uiDesigner.core.GridConstraints(3, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_BOTH, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
+		mainPanel.add(buttonPanel, new com.intellij.uiDesigner.core.GridConstraints(4, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_BOTH, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
 		processButton = new JButton();
 		processButton.setText("Process");
 		buttonPanel.add(processButton, new com.intellij.uiDesigner.core.GridConstraints(0, 2, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_HORIZONTAL, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
@@ -122,8 +127,10 @@ final class ReScalerGUI
 		fileInputLabel = new JLabel();
 		fileInputLabel.setText("Select image to process :");
 		mainPanel.add(fileInputLabel, new com.intellij.uiDesigner.core.GridConstraints(0, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_WEST, com.intellij.uiDesigner.core.GridConstraints.FILL_NONE, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-		progressBar = new JProgressBar();
-		mainPanel.add(progressBar, new com.intellij.uiDesigner.core.GridConstraints(2, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_HORIZONTAL, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_WANT_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+		progressBarFiles = new JProgressBar();
+		mainPanel.add(progressBarFiles, new com.intellij.uiDesigner.core.GridConstraints(2, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_HORIZONTAL, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_WANT_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+		progressBarAnimation = new JProgressBar();
+		mainPanel.add(progressBarAnimation, new com.intellij.uiDesigner.core.GridConstraints(3, 0, 1, 1, com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, com.intellij.uiDesigner.core.GridConstraints.FILL_HORIZONTAL, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_WANT_GROW, com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
 	}
 
 	/**
@@ -133,4 +140,5 @@ final class ReScalerGUI
 	{
 		return mainPanel;
 	}
+
 }
