@@ -35,40 +35,42 @@ final class GuiReScaler extends ReScaler
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
 		IDemuxer demuxer = lib.demuxer(video);
+		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format())).build(out);
 
-		IMuxerBuilder builder = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000));
-		/*WIP: demuxer.audioStreams().forEach(ad -> {
-			builder.audioEncoder(lib.audioEncoder("aac", ad.properties().format()));
-		});*/
-		IMuxer muxer = builder.build(out);
+		IVideoEncoderStream videoEncoder = muxer.videoEncoder(0);
+		IVideoDecoderStream videoDecoder = demuxer.videoStream(0);
 
+		int index = demuxer.audioStreams().stream().findFirst().get().index();
 
-		IVideoEncoderStream encoder = muxer.videoEncoder(0);
-		IVideoDecoderStream videoStream = demuxer.videoStream(0);
-
-		/*WIP: List<IAudioDecoderStream> audioDecoders = (List<IAudioDecoderStream>) demuxer.audioStreams();
-		List<IAudioEncoderStream> audioEncoders = new ArrayList<>();
-		audioDecoders.forEach(ad -> audioEncoders.add(muxer.audioEncoder(ad.index())));*/
+		IAudioEncoderStream audioEncoder = muxer.audioEncoder(index);
+		IAudioDecoderStream audioDecoder = demuxer.audioStreams().get(0);
 
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-		progressBarAnimation.setMaximum((int) videoStream.properties().frames());
+		progressBarAnimation.setMaximum((int) videoDecoder.properties().frames());
 		progressBarAnimation.setValue(0);
-		IVideoFrame videoFrame;
-		for (int i = 0; (videoFrame = videoStream.nextFrame()) != null; i++)
+
+		IDecodedPacket packet;
+		for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
 		{
-			int finalI = i;
-			BufferedImage image = videoFrame.image();
-			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+			if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+			{
+				audioEncoder.encode(packet.asAudio().samples());
+			}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
+			{
+				int finalI = i;
+				BufferedImage image = packet.asVideo().image();
+				collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+			}
 		}
 		demuxer.close();
 		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
 		{
 			if(futures.peek() != null){
 				if(futures.peek().isDone()){
-					System.out.println("Encoding " + futures.peek().get().getKey());
-					encoder.encode(futures.poll().get().getValue());
-					//WIP: audioEncoders.forEach(ae -> ae.encode(audioDecoders.get(audioEncoders.indexOf(ae)).nextFrame().samples()));
+					String name = futures.peek().get().getKey();
+					System.out.println("Encoding " + name);
+					videoEncoder.encode(futures.poll().get().getValue());
 					progressBarAnimation.setValue(progressBarAnimation.getValue() + 1);
 				}else
 				{

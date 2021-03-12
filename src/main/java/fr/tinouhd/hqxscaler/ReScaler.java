@@ -156,32 +156,41 @@ public class ReScaler implements AutoCloseable
 	{
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
-		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).build(out);
 		IDemuxer demuxer = lib.demuxer(video);
+		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format())).build(out);
 
-		IVideoEncoderStream encoder = muxer.videoEncoder(0);
-		IVideoDecoderStream videoStream = demuxer.videoStream(0);
+		IVideoEncoderStream videoEncoder = muxer.videoEncoder(0);
+		IVideoDecoderStream videoDecoder = demuxer.videoStream(0);
 
-		/*IAudioEncoderStream audioEncoder = muxer.audioEncoder(0);
-		IAudioDecoderStream audioDecoder = demuxer.audioStream(0);*/
+		int index = demuxer.audioStreams().stream().findFirst().get().index();
+
+		IAudioEncoderStream audioEncoder = muxer.audioEncoder(index);
+		IAudioDecoderStream audioDecoder = demuxer.audioStreams().get(0);
 
 		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
-		IVideoFrame videoFrame;
-		for (int i = 0; (videoFrame = videoStream.nextFrame()) != null; i++)
+
+		IDecodedPacket packet;
+		for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
 		{
-			int finalI = i;
-			BufferedImage image = videoFrame.image();
-			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+			if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+			{
+				audioEncoder.encode(packet.asAudio().samples());
+			}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
+			{
+				int finalI = i;
+				BufferedImage image = packet.asVideo().image();
+				collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+			}
 		}
 		demuxer.close();
 		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
 		{
 			if(futures.peek() != null){
 				if(futures.peek().isDone()){
-					System.out.println("Encoding " + futures.peek().get().getKey());
-					encoder.encode(futures.poll().get().getValue());
-					//audioEncoder.encode(audioDecoder.nextFrame().samples());
+					String name = futures.peek().get().getKey();
+					System.out.println("Encoding " + name);
+					videoEncoder.encode(futures.poll().get().getValue());
 				}else
 				{
 					Thread.sleep(1);
