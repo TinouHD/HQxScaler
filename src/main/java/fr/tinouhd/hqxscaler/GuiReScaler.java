@@ -2,7 +2,7 @@ package fr.tinouhd.hqxscaler;
 
 import com.zakgof.velvetvideo.*;
 import com.zakgof.velvetvideo.impl.VelvetVideoLib;
-import javafx.util.Pair;
+import fr.tinouhd.hqxscaler.utils.Pair;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -14,9 +14,11 @@ import javax.swing.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class GuiReScaler extends ReScaler
 {
@@ -24,7 +26,7 @@ final class GuiReScaler extends ReScaler
 	private JProgressBar progressBarAnimation;
 	public GuiReScaler(int scale, JProgressBar progress, JProgressBar animation)
 	{
-		super(scale);
+		super(scale, true);
 		this.progressBarFiles = progress;
 		this.progressBarAnimation = animation;
 	}
@@ -35,7 +37,12 @@ final class GuiReScaler extends ReScaler
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
 		IDemuxer demuxer = lib.demuxer(video);
-		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format())).build(out);
+		IMuxerBuilder muxerBuilder = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000));
+		if(demuxer.audioStreams().get(0) != null)
+		{
+			muxerBuilder.audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format()));
+		}
+		IMuxer muxer = muxerBuilder.build(out);
 
 		IVideoEncoderStream videoEncoder = muxer.videoEncoder(0);
 		IVideoDecoderStream videoDecoder = demuxer.videoStream(0);
@@ -45,26 +52,45 @@ final class GuiReScaler extends ReScaler
 		IAudioEncoderStream audioEncoder = muxer.audioEncoder(index);
 		IAudioDecoderStream audioDecoder = demuxer.audioStreams().get(0);
 
-		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
-		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
+		Queue<Future<fr.tinouhd.hqxscaler.utils.Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
 		progressBarAnimation.setMaximum((int) videoDecoder.properties().frames());
 		progressBarAnimation.setValue(0);
 
-		IDecodedPacket packet;
-		for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
-		{
-			if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+		AtomicBoolean isAllTreated = new AtomicBoolean(false);
+
+		processThread = new Thread(() -> {
+			IDecodedPacket packet;
+			for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
 			{
-				audioEncoder.encode(packet.asAudio().samples());
-			}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
-			{
-				int finalI = i;
-				BufferedImage image = packet.asVideo().image();
-				collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+				//final double freeMem = (((com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean()).getCommittedVirtualMemorySize()/1000000.0 - 512.0)/1024.0;
+				//System.out.println(Runtime.getRuntime().freeMemory() + " | " + freeMem);
+				while (100.0 * (double) Runtime.getRuntime().freeMemory() / (double) Runtime.getRuntime().totalMemory() <= 10.0)
+				{
+					try
+					{
+						Thread.sleep(1000);
+					} catch (InterruptedException e)
+					{}
+					System.out.println(100.0 * (double) Runtime.getRuntime().freeMemory() / (double) Runtime.getRuntime().totalMemory());
+					System.gc(); System.gc();
+				}
+				if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+				{
+					audioEncoder.encode(packet.asAudio().samples());
+				}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
+				{
+					int finalI = i;
+					BufferedImage image = packet.asVideo().image();
+					futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image)));
+				}
 			}
-		}
-		demuxer.close();
-		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
+			processThread.interrupt();
+			isAllTreated.set(true);
+		});
+		processThread.start();
+		System.gc();
+
+		while(!futures.isEmpty() || !isAllTreated.get())
 		{
 			if(futures.peek() != null){
 				if(futures.peek().isDone()){
@@ -72,6 +98,7 @@ final class GuiReScaler extends ReScaler
 					System.out.println("Encoding " + name);
 					videoEncoder.encode(futures.poll().get().getValue());
 					progressBarAnimation.setValue(progressBarAnimation.getValue() + 1);
+					if(Integer.parseInt(name.split("#")[1]) % 10 < 5) {System.gc(); System.gc();}
 				}else
 				{
 					Thread.sleep(1);
@@ -81,9 +108,8 @@ final class GuiReScaler extends ReScaler
 				Thread.sleep(1);
 			}
 		}
-		collectorExecutor.shutdown();
-		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		muxer.close();
+		demuxer.close();
 		progressBarAnimation.setValue(progressBarAnimation.getMaximum());
 	}
 
@@ -105,8 +131,10 @@ final class GuiReScaler extends ReScaler
 		{
 			BufferedImage image = reader.read(i);
 			int finalI = i;
+
 			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(gif.getName().split("\\.")[0] + "#" + finalI, image))));
 		}
+		System.gc();
 		in.close();
 		while (!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
 		{
@@ -133,26 +161,9 @@ final class GuiReScaler extends ReScaler
 		progressBarAnimation.setValue(progressBarAnimation.getMaximum());
 	}
 
-	@Override protected void process(File f) throws UnsupportedOperationException
-	{
-		try
-		{
-			super.process(f);
-		}catch (UnsupportedOperationException e)
-		{
-			System.err.println("Error file \"" + f.getName() + "\" not supported !");
-		}finally
-		{
-			if(!f.isDirectory())
-			{
-				progressBarFiles.setValue(progressBarFiles.getValue() + 1);
-			}
-		}
-	}
-
 	@Override public void processFileAndSave(File f)
 	{
-		if (f.isDirectory())
+		if (f.isDirectory() && processRoot == null)
 		{
 			progressBarFiles.setMaximum(countFilesInDirectory(f));
 		}else

@@ -1,12 +1,13 @@
 package fr.tinouhd.hqxscaler;
 
+import com.sun.org.apache.xerces.internal.impl.xpath.regex.RegularExpression;
 import com.zakgof.velvetvideo.*;
 import com.zakgof.velvetvideo.impl.VelvetVideoLib;
 import fr.tinouhd.hqxscaler.hqx.Hqx_2x;
 import fr.tinouhd.hqxscaler.hqx.Hqx_3x;
 import fr.tinouhd.hqxscaler.hqx.Hqx_4x;
 import fr.tinouhd.hqxscaler.hqx.RgbYuv;
-import javafx.util.Pair;
+import fr.tinouhd.hqxscaler.utils.Pair;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -21,12 +22,15 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReScaler implements AutoCloseable
 {
 	private final int scale;
-	private File processRoot;
+	private boolean errorMessage = false;
+	protected File processRoot;
 	protected final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(5);
+	protected Thread processThread;
 
 	/**
 	 * @param scale {@code 2-4} the scale factor for this ReScaler.
@@ -38,27 +42,37 @@ public class ReScaler implements AutoCloseable
 		this.scale = scale;
 	}
 
+	public ReScaler(int scale, boolean errorMessage)
+	{
+		this(scale);
+		this.errorMessage = errorMessage;
+	}
+
 	/**
 	 * @param f A File, the file to process with this ReScaler.
 	 */
-	public void processFileAndSave(File f)
+	public void processFileAndSave(File f) throws UnsupportedOperationException
 	{
-		if(f.isDirectory())
+		if(f.isDirectory() && processRoot == null)
 		{
 			processRoot = f;
 		}
-		process(f);
-	}
 
-	protected void process(File f) throws UnsupportedOperationException
-	{
 		if(f.getName().matches("^.*\\.(bmp|jpg|jpeg|png)$"))
 		{
 			try
 			{
-				File out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".png");
-				out.mkdirs();
+				File out;
+				if(processRoot != null)
+				{
+					out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".png");
+				}else
+				{
+					out = new File("out/", f.getName().split("\\.")[0] + ".png");
+				}
+				prepareFile(out);
 				ImageIO.write(executor.submit(() -> processImage(f.getName().split("\\.")[0], ImageIO.read(f))).get().getValue(), "PNG", out);
+				System.gc();
 			} catch (IOException | InterruptedException | ExecutionException ignored)
 			{}
 		}else if(f.getName().matches("^.*\\.mp4$"))
@@ -72,8 +86,11 @@ public class ReScaler implements AutoCloseable
 				}else
 				{
 					out = new File("out/", f.getName());
-				}				processVideo(f, out);
-			} catch (InterruptedException | ExecutionException e)
+				}
+				prepareFile(out);
+				processVideo(f, out);
+				System.gc();
+			} catch (InterruptedException | ExecutionException | IOException e)
 			{}
 		}else if(f.getName().matches("^.*\\.gif$"))
 		{
@@ -82,13 +99,14 @@ public class ReScaler implements AutoCloseable
 				File out;
 				if(processRoot != null)
 				{
-					System.out.println(f.getParentFile().getAbsolutePath() + "\n" + processRoot.getAbsolutePath());
 					out = new File("out/" + f.getParentFile().getAbsolutePath().substring(processRoot.getAbsolutePath().length()).replace("\\", "/"), f.getName().split("\\.")[0] + ".gif");
 				}else
 				{
 					out = new File("out/", f.getName());
 				}
+				prepareFile(out);
 				processAnimatedGif(f, out);
+				System.gc();
 			} catch (IOException | InterruptedException | ExecutionException e)
 			{}
 
@@ -96,11 +114,14 @@ public class ReScaler implements AutoCloseable
 		{
 			for(File files : f.listFiles())
 			{
-				process(files);
+				processFileAndSave(files);
 			}
 		}else
 		{
-			throw new UnsupportedOperationException();
+			if(errorMessage)
+			{
+				System.err.println("Error file \"" + f.getName() + "\" not supported !");
+			}else throw new UnsupportedOperationException();
 		}
 	}
 
@@ -157,7 +178,12 @@ public class ReScaler implements AutoCloseable
 		IVelvetVideoLib lib = VelvetVideoLib.getInstance();
 
 		IDemuxer demuxer = lib.demuxer(video);
-		IMuxer muxer = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000)).audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format())).build(out);
+		IMuxerBuilder muxerBuilder = lib.muxer("mp4").videoEncoder(lib.videoEncoder("libx264").bitrate(800000));
+		if(demuxer.audioStreams().get(0) != null)
+		{
+			muxerBuilder.audioEncoder(lib.audioEncoder(demuxer.audioStreams().get(0).properties().codec(), demuxer.audioStreams().get(0).properties().format()));
+		}
+		IMuxer muxer = muxerBuilder.build(out);
 
 		IVideoEncoderStream videoEncoder = muxer.videoEncoder(0);
 		IVideoDecoderStream videoDecoder = demuxer.videoStream(0);
@@ -167,30 +193,48 @@ public class ReScaler implements AutoCloseable
 		IAudioEncoderStream audioEncoder = muxer.audioEncoder(index);
 		IAudioDecoderStream audioDecoder = demuxer.audioStreams().get(0);
 
-		ThreadPoolExecutor collectorExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 		Queue<Future<Pair<String, BufferedImage>>> futures = new ArrayDeque<>();
 
-		IDecodedPacket packet;
-		for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
-		{
-			if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+		AtomicBoolean isAllTreated = new AtomicBoolean(false);
+
+		processThread = new Thread(() -> {
+			IDecodedPacket packet;
+			for (int i = 0; (packet = demuxer.nextPacket()) != null; i++)
 			{
-				audioEncoder.encode(packet.asAudio().samples());
-			}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
-			{
-				int finalI = i;
-				BufferedImage image = packet.asVideo().image();
-				collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image))));
+				while (100.0 * (double) Runtime.getRuntime().freeMemory() / (double) Runtime.getRuntime().totalMemory() <= 10.0)
+				{
+					try
+					{
+						Thread.sleep(1000);
+					} catch (InterruptedException e)
+					{}
+					System.out.println(100.0 * (double) Runtime.getRuntime().freeMemory() / (double) Runtime.getRuntime().totalMemory());
+					System.gc(); System.gc();
+				}
+				if(packet.is(MediaType.Audio) && packet.stream() == audioDecoder)
+				{
+					audioEncoder.encode(packet.asAudio().samples());
+				}else if(packet.is(MediaType.Video) && packet.stream() == videoDecoder)
+				{
+					int finalI = i;
+					BufferedImage image = packet.asVideo().image();
+					futures.add(executor.submit(() -> processImage(video.getName().split("\\.")[0] + "#" + finalI, image)));
+				}
 			}
-		}
-		demuxer.close();
-		while(!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
+			processThread.interrupt();
+			isAllTreated.set(true);
+		});
+		processThread.start();
+		System.gc();
+
+		while(!futures.isEmpty() || !isAllTreated.get())
 		{
 			if(futures.peek() != null){
 				if(futures.peek().isDone()){
 					String name = futures.peek().get().getKey();
 					System.out.println("Encoding " + name);
 					videoEncoder.encode(futures.poll().get().getValue());
+					if(Integer.parseInt(name.split("#")[1]) % 10 < 5) {System.gc(); System.gc();}
 				}else
 				{
 					Thread.sleep(1);
@@ -200,9 +244,8 @@ public class ReScaler implements AutoCloseable
 				Thread.sleep(1);
 			}
 		}
-		collectorExecutor.shutdown();
-		collectorExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
 		muxer.close();
+		demuxer.close();
 	}
 
 	/**
@@ -229,6 +272,7 @@ public class ReScaler implements AutoCloseable
 			int finalI = i;
 			collectorExecutor.submit(() -> futures.add(executor.submit(() -> processImage(gif.getName().split("\\.")[0] + "#" + finalI, image))));
 		}
+		System.gc();
 		in.close();
 		while (!futures.isEmpty() || collectorExecutor.getActiveCount() > 0)
 		{
@@ -256,5 +300,14 @@ public class ReScaler implements AutoCloseable
 	@Override public void close()
 	{
 		executor.shutdown();
+	}
+
+	private static void prepareFile(File file) throws IOException
+	{
+		file.setReadable(true, false);
+		file.setWritable(true, false);
+		file.setExecutable(true, false);
+		file.getParentFile().mkdirs();
+		file.createNewFile();
 	}
 }

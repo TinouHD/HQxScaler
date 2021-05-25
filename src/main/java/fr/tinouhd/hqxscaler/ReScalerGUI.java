@@ -3,6 +3,7 @@ package fr.tinouhd.hqxscaler;
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.filechooser.FileView;
 import java.awt.*;
 import java.io.File;
 
